@@ -1,0 +1,5 @@
+*.pyc
+.idea
+.DS_Store
+googleapi.p12
+googleapi.pem

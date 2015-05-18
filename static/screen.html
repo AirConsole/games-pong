@@ -1,0 +1,284 @@
+<html>
+  <head>
+    <script type="text/javascript" src="http://www.airconsole.com/file/api.js"></script>
+    <script type="text/javascript">
+      var players;
+      var ball;
+      var score = [0, 0];
+      var canvas;
+      var airconsole;
+      var last = null;
+      var score_el;
+
+      /**
+       * Sets up the communication to game pads.
+       */
+      function setupConsole() {
+        airconsole = new AirConsole();
+
+        airconsole.onMessage = function(from, data) {
+          if (from >= 1 && from <= 2 && data.move !== undefined) {
+            players[from].move.y = data.move;
+          }
+        }
+
+        airconsole.onReady = function(code, device_id) {
+          checkTwoPlayers();
+        }
+
+        airconsole.onUpdate = function(device_id, device_data) {
+          checkTwoPlayers();
+        }
+      }
+
+      /**
+       * Checks if two players are connected!
+       */
+      function checkTwoPlayers() {
+        // console_devices[0] is the screen;
+        var players = (airconsole.devices[1] ? 1 : 0) +
+            (airconsole.devices[2] ? 1 : 0);
+        var wait_div = document.getElementById("wait");
+        if (players == 2) {
+          if (!ball.move.x) {
+            resetBall(50, 0);
+          }
+          wait_div.innerHTML = "";
+        } else if (players == 1) {
+          wait_div.innerHTML = "Need 1 more player!";
+          resetBall(0, 0);
+        } else if (players == 0) {
+          wait_div.innerHTML = "Need 2 more players!";
+          resetBall(0, 0);
+        }
+      }
+
+      /**
+       * Sends a message to the device that it should vibrate;
+       */
+      function vibrate(device_id) {
+        airconsole.message(device_id, { vibrate: 1000 })
+      }
+
+      /**
+       * Draw the score and uses the player names.
+       */
+      function updateScore(player) {
+        score[player - 1] += 1;
+        var name = airconsole.devices[player].nickname || "Player " + player;
+        score_el.innerHTML = "<div style='font-size: 20px;margin-top:16px'>" +
+                             name + " scored!</div>";
+        window.setTimeout(function() {
+          score_el.innerHTML = score.join(":");
+        }, 1000);
+      }
+
+      /**
+       * body.onload function.
+       */
+      function init() {
+        setupConsole();
+
+        // Setting up the game. Nothing Game Console specific.
+
+        canvas = document.getElementById("canvas");
+        score_el = document.getElementById("score");
+        players = [ null, // The screen
+          { pos: {x: 10, y: 50}, move: {x: 0, y: 0 },
+            el: document.getElementById("player_1") },
+          { pos: {x: 190, y: 53}, move: {x: 0, y: 0 },
+            el: document.getElementById("player_2") } ];
+        ball = { pos: { x: 100, y: 50 }, move: {x: 0, y: 0 },
+          el: document.getElementById("ball") };
+        canvas.width = canvas.clientWidth;
+        canvas.height = canvas.clientHeight;
+        window.onresize = (clearCanvas);
+        last = new Date().getTime();
+        loop();
+      }
+
+      /**
+       * Moving an element. Nothing Game Console specific.
+       * @param entity
+       */
+      function updatePos(entity, delta) {
+        entity.pos.x += entity.move.x*delta;
+        entity.pos.y += entity.move.y*delta;
+      }
+
+      /**
+       * Moving the ball and drawing the canvas. Nothing Game Console specific.
+       */
+      function loop() {
+        var now = new Date().getTime();
+        var delta = (now - last);
+        delta = Math.min(20, delta);
+        delta /= 1000;
+        last = now;
+        draw(true);
+        updatePos(players[1], delta);
+        updatePos(players[2], delta);
+        updatePos(ball, delta);
+
+        // paddle limit
+        players[1].pos.y = Math.min(Math.max(10, players[1].pos.y), 90);
+        players[2].pos.y = Math.min(Math.max(10, players[2].pos.y), 90);
+
+        // Wall bounce
+        if (ball.pos.y <= 1) {
+          ball.pos.y = 1;
+          ball.move.y *= -1;
+          updatePos(ball, 0);
+        }
+        if (ball.pos.y >= 99) {
+          ball.pos.y = 99;
+          ball.move.y *= -1;
+          updatePos(ball, 0);
+        }
+
+        // Paddle bounce
+        if (ball.pos.x >= players[1].pos.x - 2 &&
+            ball.pos.x <= players[1].pos.x + 2 &&
+            ball.pos.y >= players[1].pos.y - 10 &&
+            ball.pos.y <= players[1].pos.y + 10) {
+          ball.move.x *= -1;
+          ball.move.y += (ball.pos.y - players[1].pos.y)*2;
+          ball.pos.x = players[1].pos.x + 2;
+        }
+        if (ball.pos.x >= players[2].pos.x - 2 &&
+            ball.pos.x <= players[2].pos.x + 2 &&
+            ball.pos.y >= players[2].pos.y - 10 &&
+            ball.pos.y <= players[2].pos.y + 10) {
+          ball.move.x *= -1;
+          ball.move.y += (ball.pos.y - players[2].pos.y)*2;
+          ball.pos.x = players[2].pos.x - 2;
+        }
+
+        // Score
+        if (ball.pos.x >= 200) {
+          score[0] += 1;
+          updateScore(1);
+          resetBall(-ball.move.x, ball.move.y/2);
+          vibrate(2);
+        }
+        if (ball.pos.x <= 0) {
+          score[1] += 1;
+          updateScore(2);
+          resetBall(-ball.move.x, ball.move.y/2);
+          vibrate(1);
+        }
+        draw();
+
+        requestAnimationFrame(loop);
+      }
+
+      /**
+       * Reseting the ball. Nothing Game Console specific.
+       * @param move_x
+       * @param move_y
+       */
+      function resetBall(move_x, move_y) {
+        clearCanvas();
+        ball.pos.x = 100;
+        ball.pos.y = 50;
+        ball.move.x = move_x;
+        ball.move.y = move_y;
+      }
+
+      /**
+       * Reseting the ball. Nothing Game Console specific.
+       * @param move_x
+       * @param move_y
+       */
+      function clearCanvas() {
+        var ctx = canvas.getContext("2d");
+        ctx.fillStyle = "black";
+        canvas.width = canvas.clientWidth;
+        canvas.height = canvas.clientHeight;
+        ctx.fillRect(0,0, canvas.width, canvas.height);
+      }
+
+      /**
+       * Drawing the game scene. Nothing Game Console specific.
+       * @param clear
+       */
+      function draw(clear) {
+        // Draw
+        var ctx = canvas.getContext("2d");
+        var zoom = canvas.clientHeight / 100;
+        function c(x) {
+          x *= zoom;
+          return x | 0; // round
+        }
+        ctx.fillStyle = clear ? 'black' : 'white';
+
+        ctx.fillRect(c(players[1].pos.x - 1),c(players[1].pos.y - 10),
+                     c(2), c(20));
+        ctx.fillRect(c(players[2].pos.x - 1),c(players[2].pos.y - 10),
+                     c(2), c(20));
+
+        ctx.beginPath();
+        ctx.arc(c(ball.pos.x), c(ball.pos.y), c(clear ? 3 : 2), 0,
+                2 * Math.PI, false);
+        ctx.fill();
+        ctx.closePath();
+      }
+    </script>
+    <style type="text/css">
+      @font-face {
+        font-family: 'PressStart2P';
+        src: url('PressStart2P.ttf') format('truetype');
+      }
+
+      html, body {
+        height: 100%;
+        margin: 0px;
+        font-family: 'PressStart2P', sans-serif;
+        color: white;
+        text-align: center;
+      }
+
+      .game {
+        background-color: black;
+        top: 50%;
+        margin-top: -25%;
+        padding-bottom: 50%;
+        overflow: hidden;
+        position: relative;
+      }
+
+      #canvas {
+        position: absolute;
+        top: 0px;
+        left:0px;
+        width: 100%;
+        height: 100%;
+      }
+
+      #score {
+        position: absolute;
+        top: 10%;
+        left: 0px;
+        width: 100%;
+        font-size: 48px;
+      }
+
+      #wait {
+        position: absolute;
+        top: 10%;
+        margin-top: 80px;
+        left: 0px;
+        width: 100%;
+        font-size: 24px;
+        color: lime;
+      }
+    </style>
+  </head>
+  <body onload="init()">
+    <div class="game">
+      <canvas id="canvas"></canvas>
+      <div id="score">0:0</div>
+      <div id="wait"></div>
+    </div>
+  </body>
+</html>
