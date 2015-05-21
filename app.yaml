@@ -1,4 +1,4 @@
-application: consolediscovery
+application: airconsole-games
 version: pong
 runtime: python27
 api_version: 1
