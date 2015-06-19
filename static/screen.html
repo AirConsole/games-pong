@@ -1,6 +1,6 @@
 <html>
   <head>
-    <script type="text/javascript" src="http://www.airconsole.com/api/airconsole-0.9.js"></script>
+    <script type="text/javascript" src="http://www.airconsole.com/api/airconsole-1.0.js"></script>
     <script type="text/javascript">
       var players;
       var ball;
@@ -26,7 +26,7 @@
           checkTwoPlayers();
         }
 
-        airconsole.onUpdate = function(device_id, device_data) {
+        airconsole.onDeviceStateChange = function(device_id, device_data) {
           checkTwoPlayers();
         }
       }
