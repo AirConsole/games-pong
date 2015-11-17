@@ -36,19 +36,18 @@
        * Checks if two players are connected!
        */
       function checkTwoPlayers() {
-        // console_devices[0] is the screen;
-        var players = (airconsole.devices[1] ? 1 : 0) +
-            (airconsole.devices[2] ? 1 : 0);
+        var device_ids = airconsole.getControllerDeviceIds();
+        var num_players = device_ids.length;
         var wait_div = document.getElementById("wait");
-        if (players == 2) {
+        if (num_players == 2) {
           if (!ball.move.x) {
             resetBall(50, 0);
           }
           wait_div.innerHTML = "";
-        } else if (players == 1) {
+        } else if (num_players == 1) {
           wait_div.innerHTML = "Need 1 more player!";
           resetBall(0, 0);
-        } else if (players == 0) {
+        } else if (num_players == 0) {
           wait_div.innerHTML = "Need 2 more players!";
           resetBall(0, 0);
         }
