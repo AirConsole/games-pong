@@ -20,15 +20,16 @@
           if (from >= 1 && from <= 2 && data.move !== undefined) {
             players[from].move.y = data.move;
           }
-        }
+        };
 
-        airconsole.onReady = function(code, device_id) {
+        airconsole.onConnect = function(device_id) {
           checkTwoPlayers();
-        }
+        };
 
-        airconsole.onDeviceStateChange = function(device_id, device_data) {
+        airconsole.onDisconnect = function(device_id) {
           checkTwoPlayers();
-        }
+        };
+
       }
 
       /**
