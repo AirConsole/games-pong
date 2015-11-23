@@ -15,19 +15,25 @@
     function init() {
       airconsole = new AirConsole({"orientation": "portrait"});
 
+      /*
+       * Checks if this device is part of the active game.
+       */
+      airconsole.onActivePlayersChange = function(player) {
+        var div = document.getElementById("player_id");
+        if (player !== undefined) {
+          div.innerHTML =  (["Left Player", "Right Player"][player]);
+        } else {
+          div.innerHTML = "It's a 2 player game!";
+        }
+      };
+
+      /*
+       * Makes the device vibrate if the screen says so.
+       */
       airconsole.onMessage = function(from, data) {
         if (from == AirConsole.SCREEN && data.vibrate) {
           navigator.vibrate(data.vibrate);
           console.log("Vibrating: " + data.vibrate);
-        }
-      };
-
-      airconsole.onReady = function(code) {
-        var div = document.getElementById("player_id");
-        if (this.device_id <= 2) {
-          div.innerHTML = "You are Player " + this.device_id;
-        } else {
-          div.innerHTML = "This is a two player game!";
         }
       };
     }
@@ -92,6 +98,6 @@
 <div class=button ontouchstart="move(50)" ontouchend="move(0)" onmousedown="move(50)" onmouseup="move(0)">
   <div class="button_label">DOWN</div>
 </div>
-<div id="player_id"></div>
+<div id="player_id">It's a 2 player game</div>
 </body>
 </html>
