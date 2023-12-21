@@ -52,7 +52,7 @@
        * Sets up the communication to game pads.
        */
       function setupConsole() {
-          airconsole = new AirConsole({ silence_players: true });
+          airconsole = new AirConsole({ silence_inactive_players: true });
 
           airconsole.onPause = function () {
               console.warn("Pausing game");
