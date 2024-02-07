@@ -8,29 +8,32 @@
         navigator.mozVibrate ||
         navigator.msVibrate;
 
+      var LOBBY = "LOBBY";
+      var GAME = "GAME";
+
       var transitions = {
         LOBBY: {
           entryAction: () => {
-            if(screen === "LOBBY") return;
+            if(screen === LOBBY) return;
             document.getElementById("lobby").style.display = "block";
             document.getElementById("game_mode").style.display = "none";
-            this.screen = "LOBBY";
+            this.screen = LOBBY;
           },
           exitAction: () => {},
         },
         GAME: {
           entryAction: () => {
-            if(screen === "GAME") return;
+            if(screen === GAME) return;
             document.getElementById("lobby").style.display = "none";
             document.getElementById("game_mode").style.display = "block";
-            this.screen = "GAME";
+            this.screen = GAME;
           },
           exitAction: () => {},
         },
       };
 
       var airconsole;
-      var screen = "LOBBY";
+      var screen = LOBBY;
       /**
        * Sets up the communication to the screen.
        */
@@ -46,7 +49,7 @@
           if (player !== undefined) {
             div.innerHTML = ["Left Player", "Right Player"][player];
           } else {
-            transitions["LOBBY"].entryAction();
+            transitions[LOBBY].entryAction();
           }
         };
 
@@ -85,7 +88,7 @@
         }
 
         airconsole.onReady = function () {
-          if (!airconsole.arePlayersSilenced()) transitions["LOBBY"].entryAction();
+          if (!airconsole.arePlayersSilenced()) transitions[LOBBY].entryAction();
           configurePrimaryController();
         };
 
@@ -93,7 +96,7 @@
           if(device_id === AirConsole.SCREEN) {
             if (!!screen) transitions[screen].exitAction();
             if(!!data.screen) transitions[data.screen].entryAction();
-            if (screen === "LOBBY") {
+            if (screen === LOBBY) {
               if(data.enough_players){
                 document.getElementById("start_game").style.display = "block";
                 document.getElementById("wait_players").style.display = "none";
