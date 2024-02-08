@@ -16,7 +16,6 @@
             document.getElementById("game_mode").style.display = "none";
             this.screen = LOBBY;
           },
-          exitAction: () => {},
         },
         GAME: {
           entryAction: () => {
@@ -25,7 +24,6 @@
             document.getElementById("game_mode").style.display = "block";
             this.screen = GAME;
           },
-          exitAction: () => {},
         },
       };
 
@@ -91,7 +89,6 @@
 
         airconsole.onCustomDeviceStateChange = function (device_id, data) {
           if(device_id === AirConsole.SCREEN) {
-            if (!!screen) transitions[screen].exitAction();
             if(!!data.screen) transitions[data.screen].entryAction();
             if (screen === LOBBY) {
               if(data.enough_players){
