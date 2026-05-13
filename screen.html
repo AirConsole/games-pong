@@ -1,6 +1,6 @@
 <html>
 <head>
-  <script type="text/javascript" src="https://www.airconsole.com/api/airconsole-1.9.0.js"></script>
+    <script type="text/javascript" src="https://airconsole.com/api/airconsole-1.11.0.js"></script>
     <script type="text/javascript">
       var airconsole;
       var paddles;
@@ -14,6 +14,8 @@
       var LOBBY = "LOBBY";
       var GAME = "GAME";
       let screen = LOBBY;
+      // Track per-device user media state: { device_id: { granted: true | false } }
+      let userMediaState = {};
       let transitions = {
         LOBBY: {
           entryAction: () => {
@@ -25,6 +27,7 @@
             score = [0, 0];
             score_el.innerHTML = score.join(":");
               checkTwoPlayers();
+            renderMediaState();
           },
         },
         GAME: {
@@ -37,6 +40,8 @@
             score = [0, 0];
             score_el.innerHTML = score.join(":");
             document.getElementById("wait").innerHTML = "";
+            var panel = document.getElementById("media_state_panel");
+            if (panel) panel.style.display = "none";
           },
         },
       };
@@ -62,11 +67,13 @@
 
         airconsole.onConnect = function (device_id) {
           if (!initialized) {
-            transitions["LOBBY"].entryAction();
             transitions[LOBBY].entryAction();
             initialized = true;
           }
+
+          if (!userMediaState[device_id]) userMediaState[device_id] = {};
           checkTwoPlayers();
+          renderMediaState();
         };
 
         airconsole.onDisconnect = function (device_id) {
@@ -76,7 +83,10 @@
             // Setting active players to length 0.
             airconsole.setActivePlayers(0);
           }
+
+          delete userMediaState[device_id];
           checkTwoPlayers();
+          renderMediaState();
         };
 
         airconsole.onMessage = function (device_id, data) {
@@ -88,7 +98,84 @@
           if (player !== undefined && data.move !== undefined) {
             paddles[player].move.y = data.move;
           }
+          if (player !== undefined && data.type === 'audio-level') {
+            paddles[player].audioLevel = data.level;
+            paddles[player].lastAudioTime = Date.now();
+          }
         };
+
+        const micFeedback = document.getElementById("mic_feedback");
+        const resetMicrophoneFeedback = () => {
+          setTimeout(() => {
+            if (micFeedback) {
+              micFeedback.innerHTML = "";
+            }
+          }, 5000);
+        }
+
+        airconsole.onUserMediaAccessGranted = function(device_id) {
+          const player = airconsole.convertDeviceIdToPlayerNumber(device_id);
+          const name = airconsole.getNickname(device_id) || ("Player " + (player !== undefined ? player + 1 : device_id));
+          micFeedback.innerHTML = name + " media access granted!";
+          resetMicrophoneFeedback();
+          userMediaState[device_id].granted = true;
+          userMediaState[device_id].denied = null;
+          renderMediaState();
+        };
+
+        airconsole.onUserMediaAccessDenied = function(device_id) {
+          const player = airconsole.convertDeviceIdToPlayerNumber(device_id);
+          const name = airconsole.getNickname(device_id) || ("Player " + (player !== undefined ? player + 1 : device_id));
+          micFeedback.innerHTML = name + " media access denied";
+          resetMicrophoneFeedback();
+          userMediaState[device_id].denied = true;
+          userMediaState[device_id].granted = null;
+          renderMediaState();
+        };
+      }
+
+      /**
+       * Renders the current user media state for all controllers during LOBBY.
+       */
+      function renderMediaState() {
+        const panel = document.getElementById("media_state_panel");
+        if (!panel) return;
+        // Only show during LOBBY
+        if (screen !== LOBBY) {
+          panel.style.display = "none";
+          return;
+        }
+        panel.style.display = "block";
+
+        const controllers = airconsole ? airconsole.getControllerDeviceIds() : [];
+        if (controllers.length === 0 && Object.keys(userMediaState).length === 0) {
+          panel.innerHTML = "<em>No controllers connected</em>";
+          return;
+        }
+
+        const deviceIds = controllers.length > 0 ? controllers : Object.keys(userMediaState).map(Number);
+        let html = "<strong>UserMedia State:</strong><br>";
+        deviceIds.forEach(function(deviceId) {
+          const state = userMediaState[deviceId];
+          const name = airconsole.getNickname(deviceId) || ("Device " + deviceId);
+          if (!state) {
+            html += '<div style="margin:4px 0;color:#888;">' + name + ': <span style="color:#666;">nothing requested</span></div>';
+          } else {
+            let statusText, statusColor;
+            if (state.granted) {
+              statusText = "PERMISSION GRANTED";
+              statusColor = "#0f0";
+            } else if (state.denied) {
+              statusText = "PERMISSION DENIED";
+              statusColor = "#f44";
+            } else {
+              statusText = "Request pending...";
+              statusColor = "#ff0";
+            }
+            html += '<div style="margin:4px 0;">' + name + ': <span style="color:' + statusColor + ';">' + statusText + '</span></div>';
+          }
+        });
+        panel.innerHTML = html;
       }
 
       /**
@@ -99,17 +186,23 @@
         var connected_controllers = airconsole.getControllerDeviceIds();
         // Only update if the game didn't have active players.
         if (active_players.length === 0) {
-          if (connected_controllers.length > 2) {
-            document.getElementById("wait").innerHTML = "Only 2 players can play, sorry";
-          } else if (connected_controllers.length === 2) {
-            document.getElementById("wait").innerHTML = "";
-          } else if (connected_controllers.length === 1) {
-            document.getElementById("wait").innerHTML = "Need 1 more player!";
-          } else if (connected_controllers.length === 0) {
-            document.getElementById("wait").innerHTML = "Need 2 more players!";
+          const elWait = document.getElementById("wait");
+          if (elWait !== undefined) {
+            if (connected_controllers.length > 2) {
+              elWait.innerText = "Only 2 players can play, sorry";
+            } else if (connected_controllers.length === 2) {
+              elWait.innerText = "";
+            } else if (connected_controllers.length === 1) {
+              elWait.innerText = "Need 1 more player!";
+            } else if (connected_controllers.length === 0) {
+              elWait.innerText = "Need 2 more players!";
+            }
           }
         }
-        if(send) airconsole.setCustomDeviceStateProperty("enough_players", connected_controllers.length === 2);
+        if(send) {
+          airconsole.setCustomDeviceStateProperty("enough_players", connected_controllers.length === 2);
+          airconsole.setCustomDeviceStateProperty("too_many_players", connected_controllers.length > 2)
+        }
       }
 
       /**
@@ -146,14 +239,20 @@
         score_el = document.getElementById("score");
         paddles = [
           {
+            height: 20,
             pos: {x: 10, y: 50},
             move: {x: 0, y: 0},
             el: document.getElementById("player_1"),
+            audioLevel: 0,
+            lastAudioTime: 0,
           },
           {
+            height: 20,
             pos: {x: 190, y: 53},
             move: {x: 0, y: 0},
             el: document.getElementById("player_2"),
+            audioLevel: 0,
+            lastAudioTime: 0,
           },
         ];
         ball = {
@@ -192,9 +291,12 @@
           updatePos(paddles[1], delta);
           updatePos(ball, delta);
 
+          const leftPaddleHeight = paddles[0].height || 20;
+          const rightPaddleHeight = paddles[1].height || 20;
+
           // paddle limit
-          paddles[0].pos.y = Math.min(Math.max(10, paddles[0].pos.y), 90);
-          paddles[1].pos.y = Math.min(Math.max(10, paddles[1].pos.y), 90);
+          paddles[0].pos.y = Math.min(Math.max(leftPaddleHeight / 2, paddles[0].pos.y), 90);
+          paddles[1].pos.y = Math.min(Math.max(rightPaddleHeight / 2, paddles[1].pos.y), 90);
 
           // Wall bounce
           if (ball.pos.y <= 1) {
@@ -208,22 +310,23 @@
             updatePos(ball, 0);
           }
 
-          // Paddle bounce
+          // Ball -> Paddle Bounce on left paddle
           if (
             ball.pos.x >= paddles[0].pos.x - 2 &&
             ball.pos.x <= paddles[0].pos.x + 2 &&
-            ball.pos.y >= paddles[0].pos.y - 10 &&
-            ball.pos.y <= paddles[0].pos.y + 10
+            ball.pos.y >= paddles[0].pos.y - leftPaddleHeight / 2 &&
+            ball.pos.y <= paddles[0].pos.y + leftPaddleHeight / 2
           ) {
             ball.move.x *= -1;
             ball.move.y += (ball.pos.y - paddles[0].pos.y) * 2;
             ball.pos.x = paddles[0].pos.x + 2;
           }
+          // Ball -> Paddle Bounce on right paddle
           if (
             ball.pos.x >= paddles[1].pos.x - 2 &&
             ball.pos.x <= paddles[1].pos.x + 2 &&
-            ball.pos.y >= paddles[1].pos.y - 10 &&
-            ball.pos.y <= paddles[1].pos.y + 10
+            ball.pos.y >= paddles[1].pos.y - rightPaddleHeight / 2 &&
+            ball.pos.y <= paddles[1].pos.y + rightPaddleHeight / 2
           ) {
             ball.move.x *= -1;
             ball.move.y += (ball.pos.y - paddles[1].pos.y) * 2;
@@ -250,6 +353,18 @@
             }
           }
         }
+
+        // Audio level decay for mic visualization
+        for (var pi = 0; pi < paddles.length; pi++) {
+          if (Date.now() - paddles[pi].lastAudioTime > 500) {
+            paddles[pi].audioLevel = paddles[pi].audioLevel * 0.85;
+            if (paddles[pi].audioLevel < 0.01) paddles[pi].audioLevel = 0;
+          }
+
+          // Base height is 20, add up to 30 extra based on audio level (0–MAX_AUDIO_LEVEL mapped to 0–30)
+          paddles[pi].height = 20 + (paddles[pi].audioLevel || 0) * 30; // Base height + extra based on audio level
+        }
+
         draw();
 
         requestAnimationFrame(loop);
@@ -295,10 +410,48 @@
           return x | 0; // round
         }
 
-        ctx.fillStyle = clear ? "black" : "white";
+        // Maximum Audio level (normally 0-1). When reaching or exceeding this level, the visualizer will be at max
+        //   height and pulse rate.
+        var MAX_AUDIO_LEVEL = 0.8;
 
-        ctx.fillRect(transform(paddles[0].pos.x - 1), transform(paddles[0].pos.y - 10), transform(2), transform(20));
-        ctx.fillRect(transform(paddles[1].pos.x - 1), transform(paddles[1].pos.y - 10), transform(2), transform(20));
+        for (var pi = 0; pi < paddles.length; pi++) {
+          var paddle = paddles[pi];
+          var level = paddle.audioLevel || 0;
+
+          // Clamp to max audio level, normalize to 0–1
+          var clampedLevel = Math.min(level, MAX_AUDIO_LEVEL) / MAX_AUDIO_LEVEL;
+
+          var rH = paddle.height;
+
+          // Color pulse: oscillate between white and player color at rate = level * 1 Hz
+          var color;
+          // Only pulse if level is above 0.15 to avoid distracting small pulses at low audio levels.
+          if (!clear && clampedLevel > 0.15) {
+            var pulseHz = clampedLevel * 1;
+            var t = (Date.now() / 1000) * pulseHz * 2 * Math.PI;
+            var blend = (Math.sin(t) + 1) / 2; // 0–1
+
+            // P1: #00cfff = rgb(0,207,255)   P2: #ff6600 = rgb(255,102,0)
+            var rgb = pi === 0 ? [0, 207, 255] : [255, 102, 0];
+            var r = Math.round(255 * (1 - blend) + rgb[0] * blend);
+            var g = Math.round(255 * (1 - blend) + rgb[1] * blend);
+            var b = Math.round(255 * (1 - blend) + rgb[2] * blend);
+            color = 'rgb(' + r + ',' + g + ',' + b + ')';
+          } else {
+            color = clear ? 'black' : 'white';
+          }
+
+          ctx.shadowBlur = 0;
+          ctx.fillStyle = color;
+          ctx.fillRect(
+            transform(paddle.pos.x - 1),
+            transform(paddle.pos.y - rH / 2),
+            transform(2),
+            transform(rH)
+          );
+        }
+
+        ctx.fillStyle = clear ? "black" : "white";
 
         ctx.beginPath();
         ctx.arc(transform(ball.pos.x), transform(ball.pos.y), transform(clear ? 3 : 2), 0, 2 * Math.PI, false);
@@ -362,6 +515,8 @@
     <canvas id="canvas"></canvas>
     <div id="score">0:0</div>
     <div id="wait"></div>
+    <div id="mic_feedback" style="position: absolute; bottom: 10%; width: 100%; font-size: 16px; color: #ff00ff;"></div>
+    <div id="media_state_panel" style="position: absolute; bottom: 2%; left: 5%; width: 90%; font-size: 14px; color: #ccc; text-align: left; max-height: 40%; overflow-y: auto;"></div>
 </div>
 </body>
 </html>

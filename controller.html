@@ -1,6 +1,6 @@
 <html>
   <head>
-    <script type="text/javascript" src="https://www.airconsole.com/api/airconsole-1.9.0.js"></script>
+    <script type="text/javascript" src="https://airconsole.com/api/airconsole-1.11.0.js"></script>
     <script type="text/javascript">
       // Note: We manage the different div based views manually to keep the example simple.
       // But you could use https://github.com/AirConsole/airconsole-ctrl-generator-example/blob/master/controller/libs/airconsole_view_manager.js
@@ -14,7 +14,7 @@
             if(screen === LOBBY) return;
             document.getElementById("lobby").style.display = "block";
             document.getElementById("game_mode").style.display = "none";
-            this.screen = LOBBY;
+            screen = LOBBY;
           },
         },
         GAME: {
@@ -22,7 +22,7 @@
             if(screen === GAME) return;
             document.getElementById("lobby").style.display = "none";
             document.getElementById("game_mode").style.display = "block";
-            this.screen = GAME;
+            screen = GAME;
           },
         },
       };
@@ -59,6 +59,9 @@
 
         // The master controller status can change when the current master leaves the session.
         airconsole.onDisconnect = function (device_id) {
+          if (device_id === airconsole.getDeviceId()) {
+            stopMicStream();
+          }
           if (airconsole.getMasterControllerDeviceId() === airconsole.device_id) {
             configurePrimaryController();
           } else {
@@ -96,7 +99,11 @@
                 document.getElementById("wait_players").style.display = "none";
               } else {
                 document.getElementById("start_game").style.display = "none";
-                document.getElementById("wait_players").style.display = "block";
+                const elWaitingForPlayers = document.getElementById("wait_players");
+                if (elWaitingForPlayers !== undefined) {
+                  elWaitingForPlayers.style.display = "block";
+                  elWaitingForPlayers.innerText = data.too_many_players ? 'Only 2 players can play this game' : 'Waiting for second player';
+                }
               }
             }
           }
@@ -123,6 +130,128 @@
 
       function startGame() {
         airconsole.message(AirConsole.SCREEN, { start_game: true });
+      }
+
+      var micStream = null;
+      var micAnimFrame = null;
+      var micAnalyser = null;
+      var micAudioContext = null;
+      var micSource = null;
+
+      function requestMic() {
+        var btn = document.getElementById('mic-btn');
+        btn.className = 'mic-btn requesting';
+        btn.disabled = true;
+
+        airconsole.getUserMedia({ audio: true }).then(function(stream) {
+          btn.className = 'mic-btn active';
+          micStream = stream;
+          micAudioContext = new AudioContext();
+          micSource = micAudioContext.createMediaStreamSource(micStream);
+          micAnalyser = micAudioContext.createAnalyser();
+          micAnalyser.fftSize = 256;
+          micSource.connect(micAnalyser);
+
+          // We reenable the button so users that later on change their mind on disallowing the microphone can reconsider the decision without restarting.
+          btn.disabled = false;
+
+          startAudioLoop();
+          showMicSuccess('Permission granted');
+        }).catch(function(error) {
+          console.error('Error while requesting microphone access:', error);
+          // Restore button state so the user can try again
+          btn.className = 'mic-btn denied';
+          btn.disabled = false;
+
+          if (error instanceof AirConsoleUserMediaError){
+            const msg = (error && (error.message || error.name)) ? (error.message || error.name) : 'Unexpected AirConsole.getUserMedia usage error';
+            showMicError(msg);
+          } else {
+            if (error.name === 'NotAllowedError') {
+              showMicError('Permission denied');
+            } else {
+              const msg = (error && (error.message || error.name)) ? (error.message || error.name) : 'Unexpected navigator.mediaDevices.getUserMedia error';
+              showMicError(msg);
+            }
+          }
+        })
+      }
+
+      function startAudioLoop() {
+        var data = new Uint8Array(micAnalyser.frequencyBinCount);
+        var lastSendTime = 0;
+        var SEND_INTERVAL_MS = 100; // 10 messages per second (rate limit is 25/s)
+        function tick() {
+          micAnimFrame = requestAnimationFrame(tick);
+          var now = Date.now();
+          if (now - lastSendTime < SEND_INTERVAL_MS) return;
+          lastSendTime = now;
+          micAnalyser.getByteFrequencyData(data);
+          var sum = 0;
+          for (var i = 0; i < data.length; i++) sum += data[i] * data[i];
+          var level = Math.sqrt(sum / data.length) / 255;
+          airconsole.message(AirConsole.SCREEN, { type: 'audio-level', level: level });
+        }
+        tick();
+      }
+
+      function stopMicStream() {
+        if (micAnimFrame) {
+          cancelAnimationFrame(micAnimFrame);
+          micAnimFrame = null;
+        }
+        if (micStream) {
+          micStream.getTracks().forEach(function(t) { t.stop(); });
+          micStream = null;
+        }
+        if (micSource) {
+          try {
+            micSource.disconnect();
+          } catch (e) {
+            console.warn('Error disconnecting mic source:', e);
+          }
+          micSource = null;
+        }
+        if (micAnalyser) {
+          try {
+            micAnalyser.disconnect();
+          } catch (e) {
+            console.warn('Error disconnecting mic analyser:', e);
+          }
+          micAnalyser = null;
+        }
+        if (micAudioContext) {
+          try {
+            var ctx = micAudioContext;
+            micAudioContext = null;
+            ctx.close().catch(function(err) {
+              console.warn('Error closing AudioContext:', err);
+            });
+          } catch (e) {
+            console.warn('Error while closing AudioContext:', e);
+            micAudioContext = null;
+          }
+        }
+      }
+
+      function showMicSuccess(msg) {
+        const elError = document.getElementById('mic-error');
+        elError.style.display = 'none';
+
+        const elSuccess = document.getElementById('mic-success');
+        elSuccess.textContent = msg;
+        elSuccess.style.display = 'block';
+        setTimeout(function() { elSuccess.style.display = 'none'; }, 3000);
+      }
+
+      function showMicError(msg) {
+        const elSuccess = document.getElementById('mic-success');
+        elSuccess.style.display = 'none';
+
+        const elError = document.getElementById('mic-error');
+        elError.textContent = msg;
+        elError.style.display = 'block';
+        setTimeout(function() { elError.style.display = 'none'; }, 3000);
       }
     </script>
     <style type="text/css">
@@ -165,6 +294,39 @@
         width: 100%;
         margin-top: -8px;
         color: #777;
+      }
+
+      .mic-btn {
+        padding: 10px 16px;
+        font-family: 'PressStart2P', sans-serif;
+        font-size: 10px;
+        cursor: pointer;
+        background: #333;
+        color: #ccc;
+        border: 2px solid #555;
+        border-radius: 4px;
+        transition: all 0.2s;
+      }
+      .mic-btn.requesting {
+        animation: mic-pulse 0.8s ease-in-out infinite;
+        color: #fff;
+        border-color: #888;
+      }
+      .mic-btn.active {
+        background: #003300;
+        color: #00ff00;
+        border-color: #00ff00;
+        box-shadow: 0 0 12px #00ff00;
+      }
+      .mic-btn.denied {
+        background: #330000;
+        color: #ff4444;
+        border-color: #ff4444;
+        cursor: not-allowed;
+      }
+      @keyframes mic-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
       }
     </style>
   </head>
@@ -211,5 +373,10 @@
       </div>
     </div>
     <div id="game_output">... Waiting ...</div>
+    <div id="mic-section" style="position: absolute; bottom: 5%; width: 100%; text-align: center;">
+      <button id="mic-btn" class="mic-btn" onclick="requestMic()">🎤 Enable Mic</button>
+      <div id="mic-error" style="display:none; margin-top:8px; font-size:10px; color:#ff4444; background:#1a0000; padding:6px; border-radius:4px;"></div>
+      <div id="mic-success" style="display:none; margin-top:8px; font-size:10px; color:#05fa0a; background:#1a0000; padding:6px; border-radius:4px;"></div>
+    </div>
   </body>
 </html>
